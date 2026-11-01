@@ -10,7 +10,7 @@ BOT = os.environ.get("BOT", "@folkapp_bot")
 CAP = int(os.environ.get("CAP", "100"))
 TOTAL = 1000
 START = (8, 30)
-END = (12, 0)
+END = (13, 30)
 GEM_KEY = os.environ["GEM_KEY"]
 GIST_ID = os.environ["GIST_ID"]
 GIST_TOKEN = os.environ["GIST_TOKEN"]
@@ -18,7 +18,8 @@ API_ID = int(os.environ["TG_API_ID"])
 API_HASH = os.environ["TG_API_HASH"]
 SESSION = os.environ["TG_SESSION"]
 GEM_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + GEM_KEY
-NOTICE = re.compile(r"(daily|message|text)s?\s+limit|limit\s+(reached|hit)|reached\s+(your|the)\s+limit|\d+\s*(of|/)\s*100|texts?\s+(left|remaining)|out of texts|refill", re.I)
+NOTICE = re.compile(r"daily limit|pausing until", re.I)
+CUE = re.compile(r"let me|hold on|one sec|checking|searching|look(ing)? (it )?up|give me a (sec|min)|hang on|pulling", re.I)
 BANNED = ["great explanation", "thanks for that", "could you elaborate", "fascinating", "great question", "that makes sense", "i see"]
 PERSONA = ("You are a young Nigerian woman texting your clingy ex boyfriend, who keeps reaching out. "
 "You have mostly moved on but you are not heartless. You mix patience, light teasing, firm boundaries and occasional softness. "
@@ -118,7 +119,7 @@ async def wait_reply(conv):
     parts = [first]
     while True:
         try:
-            parts.append((await conv.get_response(timeout=6)).text)
+            parts.append((await conv.get_response(timeout=(90 if CUE.search(parts[-1]) else 20))).text)
         except asyncio.TimeoutError:
             break
     return " ".join(p for p in parts if p)
@@ -203,7 +204,9 @@ async def run_day(client, day):
         print("[%d/%d] me: %s" % (rec["sent"], CAP, msg), flush=True)
         print("        bot: %s" % reply[:150], flush=True)
         hit = NOTICE.search(reply)
-        if hit:
+        if hit and rec["sent"] < 80:
+            print("ignored early notice match:", hit.group(0), flush=True)
+        elif hit:
             rec["done"] = True
             rec["why"] = "notice"
             await asyncio.to_thread(save_state)
@@ -213,6 +216,13 @@ async def run_day(client, day):
         if random.random() < 0.05:
             gap = random.randint(180, 360)
         await asyncio.sleep(gap)
+        try:
+            recent = await client.get_messages(BOT, limit=10)
+            allbot = [m.text for m in reversed(recent) if not m.out and m.id > sm.id and m.text]
+            if allbot:
+                rec["msgs"][-1] = ["bot", " ".join(allbot)]
+        except Exception as e:
+            print("catchup error:", e, flush=True)
 
 class Door(BaseHTTPRequestHandler):
     def _send(self, head_only):
@@ -247,6 +257,12 @@ async def main():
         print("telegram session not authorized, make a new login string", flush=True)
         while True:
             await asyncio.sleep(3600)
+    for _k, _v in S["days"].items():
+        if _v.get("done") and _v.get("why") == "notice" and _v.get("sent", 0) < 80:
+            _v["done"] = False
+            _v["why"] = ""
+            await asyncio.to_thread(save_state)
+            print("cleared a false quota stop for", _k, flush=True)
     print("host ready", flush=True)
     while total() < TOTAL:
         day = day_str()
