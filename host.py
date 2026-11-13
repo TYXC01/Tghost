@@ -13,8 +13,7 @@ STAGGER_MAX = int(os.environ.get("STAGGER_MAX", "60"))
 GEM_KEY = os.environ.get("GEM_KEY", "")
 GEM_BASE = os.environ.get("GEM_BASE", "https://generativelanguage.googleapis.com")
 GEM_URL = GEM_BASE + "/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + GEM_KEY
-NOTICE_TEXT = ("heads up: you've reached today's 50-message limit, so i'm pausing until around 12:00am tomorrow. "
-               "want back in sooner? send https://www.folk.com/gift/q62zzca5?s=limit to a friend, the second they join folk i'm back.")
+NOTICE_PARTS = ["pausing until around 12:00am tomorrow", "?s=limit"]
 CUE = re.compile(r"let me|hold on|one sec|checking|searching|look(ing)? (it )?up|give me a (sec|min)|hang on|pulling", re.I)
 BANNED = ["great explanation", "thanks for that", "could you elaborate", "fascinating", "great question", "that makes sense", "i see"]
 NEEDED = ("GEM_KEY", "GIST_ID", "GIST_TOKEN", "ENC_KEY")
@@ -40,9 +39,6 @@ def norm(t):
     for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"')):
         t = t.replace(a, b)
     return " ".join(t.lower().split())
-
-
-NOTICE_N = norm(NOTICE_TEXT)
 
 
 def day_str():
@@ -291,12 +287,13 @@ async def run_day(client, name, st, day):
         await asyncio.to_thread(save_state, name, st)
         print("[%s %d/%d] me: %s" % (name, rec["sent"], cap, msg), flush=True)
         print("        bot: %s" % reply[:150], flush=True)
-        if NOTICE_N in norm(reply):
+        hit = [p for p in NOTICE_PARTS if p in norm(reply)]
+        if hit:
             rec["sent"] -= 1
             rec["done"] = True
             rec["why"] = "notice"
             await asyncio.to_thread(save_state, name, st)
-            print(name, "exact limit notice received, the refused text is not counted | accepted today:", rec["sent"], "| stopping for today", flush=True)
+            print(name, "limit notice received (matched: " + hit[0] + "), the refused text is not counted | accepted today:", rec["sent"], "| stopping for today", flush=True)
             return
         gap = random.randint(int(gap_lo), int(gap_hi))
         if random.random() < 0.05:
