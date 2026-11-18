@@ -1,4 +1,4 @@
-import os, json, base64, hmac, hashlib, time, urllib.request
+import os, json, base64, hmac, hashlib, time, random, urllib.request
 import pyaes
 
 GIST_API = os.environ.get("GIST_API", "https://api.github.com")
@@ -133,3 +133,26 @@ CARD_LABELS = {
     "abroad": "friend back home, other friend moved abroad",
     "cousin": "younger cousin texting the big cousin",
 }
+
+
+# ---------- device profiles (what Telegram shows in Settings, Devices) ----------
+PROFILES = [
+    ("Redmi Note 11", "Android 12"), ("Redmi 10C", "Android 12"), ("Redmi Note 10", "Android 11"),
+    ("Samsung Galaxy A32", "Android 13"), ("Samsung Galaxy A12", "Android 11"), ("Samsung Galaxy A13", "Android 12"),
+    ("Samsung Galaxy A23", "Android 13"), ("Tecno Spark 8", "Android 11"), ("Tecno Camon 18", "Android 11"),
+    ("Tecno Pova 3", "Android 12"), ("Infinix Hot 11", "Android 11"), ("Infinix Note 11", "Android 12"),
+    ("Itel S18", "Android 11"), ("realme C25", "Android 11"), ("Oppo A54", "Android 11"), ("Vivo Y21", "Android 11"),
+]
+
+
+def new_profile(taken_models=()):
+    free = [p for p in PROFILES if p[0] not in taken_models] or PROFILES
+    model, ver = random.choice(free)
+    return {"device_model": model, "system_version": ver, "lang_code": "en", "system_lang_code": "en"}
+
+
+def client_args(profile):
+    """Keyword arguments for TelegramClient. The app version is left as Telethon's own."""
+    if not profile:
+        return {}
+    return {k: profile[k] for k in ("device_model", "system_version", "lang_code", "system_lang_code") if k in profile}
