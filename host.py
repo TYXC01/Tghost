@@ -10,6 +10,8 @@ WAT = timezone(timedelta(hours=1))
 SERVER = str(os.environ.get("SERVER", "1"))
 DEFAULT_CAP = int(os.environ.get("CAP", "51"))
 STAGGER_MAX = int(os.environ.get("STAGGER_MAX", "60"))
+RELOAD = int(os.environ.get("RELOAD_SECS", "120"))
+IDLE = int(os.environ.get("IDLE_SECS", "30"))
 GEM_KEY = os.environ.get("GEM_KEY", "")
 GEM_BASE = os.environ.get("GEM_BASE", "https://generativelanguage.googleapis.com")
 GEM_URL = GEM_BASE + "/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + GEM_KEY
@@ -191,6 +193,11 @@ async def refresh_history(client, bot, rec):
         rec["msgs"].append(["bot", joined])
 
 
+def sig(name):
+    e = ACCOUNTS.get(name, {})
+    return (e.get("enc"), json.dumps(e.get("profile"), sort_keys=True))
+
+
 def active(name):
     e = ACCOUNTS.get(name)
     return bool(e and e.get("enabled", True) and str(e.get("server", "1")) == SERVER)
@@ -308,15 +315,16 @@ async def run_day(client, name, st, day):
 # ---------- one account, all days ----------
 async def run_account(name):
     e = ACCOUNTS[name]
-    enc_now = e["enc"]
-    creds = common.dec(enc_now)
-    client = TelegramClient(StringSession(creds["session"]), int(creds["api_id"]), creds["api_hash"])
+    sig_now = sig(name)
+    creds = common.dec(e["enc"])
+    client = TelegramClient(StringSession(creds["session"]), int(creds["api_id"]), creds["api_hash"],
+                            **common.client_args(e.get("profile")))
     await client.connect()
     try:
         if not await client.is_user_authorized():
             STATUS[name] = "needs login"
             print(name, "session not authorized, make a new login", flush=True)
-            while active(name) and ACCOUNTS[name]["enc"] == enc_now:
+            while active(name) and sig(name) == sig_now:
                 await asyncio.sleep(60)
             return
         st = None
@@ -325,7 +333,7 @@ async def run_account(name):
             if st is None:
                 await asyncio.sleep(20)
         print(name, "ready", flush=True)
-        while active(name) and ACCOUNTS[name]["enc"] == enc_now:
+        while active(name) and sig(name) == sig_now:
             e = ACCOUNTS[name]
             cap = int(e.get("cap", DEFAULT_CAP))
             day = day_str()
@@ -338,7 +346,7 @@ async def run_account(name):
                 STATUS[name] = "%d/%d done" % (rec.get("sent", 0), cap)
             else:
                 STATUS[name] = "waiting for " + e.get("start", "08:30")
-            await asyncio.sleep(30)
+            await asyncio.sleep(IDLE)
     finally:
         try:
             await client.disconnect()
@@ -372,7 +380,7 @@ async def manager(tasks):
         for name in list(ACCOUNTS):
             if active(name) and (name not in tasks or tasks[name].done()):
                 tasks[name] = asyncio.create_task(account_loop(name))
-        await asyncio.sleep(120)
+        await asyncio.sleep(RELOAD)
 
 
 # ---------- status line for the pings ----------
